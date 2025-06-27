@@ -1,0 +1,151 @@
+-- Ensure schemas exist
+CREATE SCHEMA IF NOT EXISTS teachmate;
+CREATE SCHEMA IF NOT EXISTS studentmate;
+
+-- Drop dependent tables first to avoid foreign key constraint errors
+DROP TABLE IF EXISTS teachmate.teacher_assignments CASCADE;
+DROP TABLE IF EXISTS teachmate.teachers CASCADE;
+DROP TABLE IF EXISTS studentmate.sgurukul CASCADE;
+DROP TABLE IF EXISTS studentmate.smilestones CASCADE;
+DROP TABLE IF EXISTS studentmate.students CASCADE;
+
+-- Recreate public.users (assuming it's already structured as per previous discussion)
+-- If public.users table already exists with the correct structure, you can skip this block.
+-- Otherwise, uncomment and run if you need to create/recreate it:
+/*
+CREATE TABLE public.users (
+    userid SERIAL PRIMARY KEY,
+    username VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    role VARCHAR(50) NOT NULL, -- e.g., 'teacher', 'student', 'admin', 'mentor', 'parent'
+    isdeleted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+*/
+
+-- Create teachmate.teachers
+-- teachid is PRIMARY KEY and also REFERENCES public.users(userid)
+CREATE TABLE teachmate.teachers (
+    teachid INTEGER PRIMARY KEY REFERENCES public.users(userid) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL, -- Will store a bcrypt hash
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP WITHOUT TIME ZONE
+);
+
+-- Create teachmate.teacher_assignments (as per your last message)
+CREATE TABLE teachmate.teacher_assignments (
+    assign_id SERIAL PRIMARY KEY,
+    teacher_id INTEGER NOT NULL REFERENCES public.users(userid) ON DELETE CASCADE,
+    sub_id INTEGER NOT NULL REFERENCES teachmate.subjects(subid) ON DELETE CASCADE,
+    assigned_on TIMESTAMP WITHOUT TIME ZONE DEFAULT now(),
+    isapprover BOOLEAN DEFAULT false
+);
+
+-- Create studentmate.students
+-- sid is PRIMARY KEY and also REFERENCES public.users(userid)
+CREATE TABLE studentmate.students (
+    sid INTEGER PRIMARY KEY REFERENCES public.users(userid) ON DELETE CASCADE,
+    sname VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL -- Will store a bcrypt hash
+);
+
+-- Create studentmate.sgurukul (links students to gurukuls)
+CREATE TABLE studentmate.sgurukul (
+    s_gid_id SERIAL PRIMARY KEY,
+    sid INTEGER NOT NULL REFERENCES studentmate.students(sid) ON DELETE CASCADE,
+    gid INTEGER NOT NULL REFERENCES public.gurukul(gid) ON DELETE CASCADE,
+    starttime TIMESTAMP WITHOUT TIME ZONE,
+    endtime TIMESTAMP WITHOUT TIME ZONE,
+    status VARCHAR(255),
+    CONSTRAINT sgurukul_status_check CHECK (((status)::text = ANY (ARRAY[('Started'::character varying)::text, ('In_progress'::character varying)::text, ('Done'::character varying)::text]))),
+    UNIQUE (sid, gid) -- A student can only be associated with a specific gurukul once
+);
+
+-- Create studentmate.smilestones (links students to milestones)
+CREATE TABLE studentmate.smilestones (
+    s_mid_id SERIAL PRIMARY KEY,
+    sid INTEGER NOT NULL REFERENCES studentmate.students(sid) ON DELETE CASCADE,
+    mid INTEGER NOT NULL REFERENCES teachmate.milestones(mid) ON DELETE CASCADE,
+    starttime TIMESTAMP WITHOUT TIME ZONE,
+    endtime TIMESTAMP WITHOUT TIME ZONE,
+    status VARCHAR(255),
+    score INTEGER DEFAULT 0,
+    CONSTRAINT smilestones_status_check CHECK (((status)::text = ANY (ARRAY[('Started'::character varying)::text, ('In_progress'::character varying)::text, ('Done'::character varying)::text]))),
+    UNIQUE (sid, mid) -- A student can only be associated with a specific milestone once
+);
+
+-- Ensure schemas exist
+CREATE SCHEMA IF NOT EXISTS teachmate;
+CREATE SCHEMA IF NOT EXISTS studentmate;
+
+-- 1. Create public.users (ONLY if it does not exist with this exact structure)
+-- This is the only new table.
+CREATE TABLE IF NOT EXISTS public.users (
+    userid SERIAL PRIMARY KEY,
+    username VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    role VARCHAR(50) NOT NULL, -- e.g., 'teacher', 'student', 'admin', 'mentor', 'parent'
+    isdeleted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. VERIFY OR CREATE teachmate.teachers
+-- teachid is a standalone PRIMARY KEY. Linkage to public.users.userid is programmatic.
+CREATE TABLE IF NOT EXISTS teachmate.teachers (
+    teachid INTEGER PRIMARY KEY, -- No direct FK constraint to public.users.userid here
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP WITHOUT TIME ZONE
+);
+
+-- 3. VERIFY OR CREATE teachmate.teacher_assignments
+-- teacher_id REFERENCES teachmate.teachers(teachid)
+CREATE TABLE IF NOT EXISTS teachmate.teacher_assignments (
+    assign_id SERIAL PRIMARY KEY,
+    teacher_id INTEGER NOT NULL REFERENCES teachmate.teachers(teachid) ON DELETE CASCADE, -- REFERENCES teachmate.teachers.teachid
+    sub_id INTEGER NOT NULL REFERENCES teachmate.subjects(subid) ON DELETE CASCADE,
+    assigned_on TIMESTAMP WITHOUT TIME ZONE DEFAULT now(),
+    isapprover BOOLEAN DEFAULT false,
+    UNIQUE (teacher_id, sub_id) -- Ensures a teacher is assigned to a subject only once
+);
+
+-- 4. VERIFY OR CREATE studentmate.students
+-- sid is a standalone PRIMARY KEY. Linkage to public.users.userid is programmatic.
+CREATE TABLE IF NOT EXISTS studentmate.students (
+    sid INTEGER PRIMARY KEY, -- No direct FK constraint to public.users.userid here
+    sname VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL
+);
+
+-- 5. VERIFY OR CREATE studentmate.sgurukul
+-- sid REFERENCES studentmate.students(sid)
+CREATE TABLE IF NOT EXISTS studentmate.sgurukul (
+    s_gid_id SERIAL PRIMARY KEY,
+    sid INTEGER NOT NULL REFERENCES studentmate.students(sid) ON DELETE CASCADE, -- REFERENCES studentmate.students.sid
+    gid INTEGER NOT NULL ,
+    starttime TIMESTAMP WITHOUT TIME ZONE,
+    endtime TIMESTAMP WITHOUT TIME ZONE,
+    status VARCHAR(255),
+    CONSTRAINT sgurukul_status_check CHECK (((status)::text = ANY (ARRAY[('Started'::character varying)::text, ('In_progress'::character varying)::text, ('Done'::character varying)::text]))),
+    UNIQUE (sid, gid)
+);
+
+-- 6. VERIFY OR CREATE studentmate.smilestones
+-- sid REFERENCES studentmate.students(sid)
+CREATE TABLE IF NOT EXISTS studentmate.smilestones (
+    s_mid_id SERIAL PRIMARY KEY,
+    sid INTEGER NOT NULL REFERENCES studentmate.students(sid) ON DELETE CASCADE, -- REFERENCES studentmate.students.sid
+    mid INTEGER NOT NULL ,
+    starttime TIMESTAMP WITHOUT TIME ZONE,
+    endtime TIMESTAMP WITHOUT TIME ZONE,
+    status VARCHAR(255),
+    score INTEGER DEFAULT 0,
+    CONSTRAINT smilestones_status_check CHECK (((status)::text = ANY (ARRAY[('Started'::character varying)::text, ('In_progress'::character varying)::text, ('Done'::character varying)::text]))),
+    UNIQUE (sid, mid)
+);
