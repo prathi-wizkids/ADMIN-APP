@@ -13,7 +13,7 @@ from showTopicsbyLevel import show_topics_by_level_page # Import the new page
 
 # --- Main Application ---
 def main():
-    st.set_page_config(layout="wide", page_title="TeachMate Admin UI")
+    st.set_page_config(layout="wide", page_title="Gurukul Admin UI")
 
     # Initialize session state for page navigation if not already set
     if 'current_page' not in st.session_state:
@@ -57,8 +57,10 @@ def main():
     st.markdown("---") # Add a horizontal line for visual separation
 
     if st.session_state.current_page == "Home":
-        st.header("Welcome to the TeachMate Admin UI!")
+        st.header("Welcome to Admin UI!")
         st.info("Select a management section from the sidebar to get started.")
+        st.image("flower.png", caption="", use_container_width=True)
+
     elif st.session_state.current_page == "Gurukuls":
         gurukul_manage_page()
     elif st.session_state.current_page == "Offerings":
