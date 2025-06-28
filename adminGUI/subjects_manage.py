@@ -81,8 +81,8 @@ def get_distinct_milestone_levels():
         levels_data = response.json()
         
         # --- Debugging Information for API Response ---
-        st.info(f"DEBUG: Raw API response JSON for distinct levels: {levels_data}")
-        st.info(f"DEBUG: Type of levels_data: {type(levels_data)}")
+        print(f"DEBUG: Raw API response JSON for distinct levels: {levels_data}")
+        print(f"DEBUG: Type of levels_data: {type(levels_data)}")
         # --- End Debugging Information ---
 
         if not isinstance(levels_data, list):
@@ -93,7 +93,7 @@ def get_distinct_milestone_levels():
         extracted_levels = []
         for i, item in enumerate(levels_data):
             # --- Debugging Information for List Items ---
-            st.info(f"DEBUG: Processing item {i}: {item}, Type: {type(item)}")
+            print(f"DEBUG: Processing item {i}: {item}, Type: {type(item)}")
             # --- End Debugging Information ---
             if isinstance(item, str): # Corrected: Expect string directly
                 extracted_levels.append(item)

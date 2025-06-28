@@ -131,9 +131,9 @@ def offerings_manage_page():
             available_gtypes_for_creation_current_selection.sort()
 
         # --- Debugging Information ---
-        st.info(f"DEBUG (Create): Selected Gurukul ID: {selected_gurukul_create_id}")
-        st.info(f"DEBUG (Create): Existing GTypes for selected Gurukul: {list(existing_gtypes_for_selected_gurukul)}")
-        st.info(f"DEBUG (Create): Available GTypes for dropdown: {available_gtypes_for_creation_current_selection}")
+        print(f"DEBUG (Create): Selected Gurukul ID: {selected_gurukul_create_id}")
+        print(f"DEBUG (Create): Existing GTypes for selected Gurukul: {list(existing_gtypes_for_selected_gurukul)}")
+        print(f"DEBUG (Create): Available GTypes for dropdown: {available_gtypes_for_creation_current_selection}")
         # --- End Debugging Information ---
 
         with st.form("create_offering_form"):

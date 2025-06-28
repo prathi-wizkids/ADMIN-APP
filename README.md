@@ -24,6 +24,7 @@ npm start
 --------------------
 cd adminGUI
 pip install streamlit requests pandas
+pip install regex
 streamlit run main.py
 
 if streamlit looks too dark, try different browser, or change settings.

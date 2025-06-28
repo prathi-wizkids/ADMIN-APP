@@ -169,11 +169,11 @@ def milestones_manage_page():
         available_levels_for_creation_current_selection.sort()
 
     # --- Debugging Information (Create Section) ---
-    st.info(f"DEBUG (Create): Selected Gurukul ID: {selected_gurukul_create_id}")
-    st.info(f"DEBUG (Create): Selected Offering OID: {selected_offering_create_oid}")
-    st.info(f"DEBUG (Create): Selected Offering GType: {selected_offering_gtype}")
-    st.info(f"DEBUG (Create): Existing Levels for this OID: {list(existing_levels_for_oid) if selected_offering_create_oid else 'N/A'}")
-    st.info(f"DEBUG (Create): Available Levels for dropdown: {available_levels_for_creation_current_selection}")
+    print(f"DEBUG (Create): Selected Gurukul ID: {selected_gurukul_create_id}")
+    print(f"DEBUG (Create): Selected Offering OID: {selected_offering_create_oid}")
+    print(f"DEBUG (Create): Selected Offering GType: {selected_offering_gtype}")
+    print(f"DEBUG (Create): Existing Levels for this OID: {list(existing_levels_for_oid) if selected_offering_create_oid else 'N/A'}")
+    print(f"DEBUG (Create): Available Levels for dropdown: {available_levels_for_creation_current_selection}")
     # --- End Debugging Information ---
 
     with st.form("create_milestone_form"):
@@ -333,12 +333,12 @@ def milestones_manage_page():
     available_levels_for_update.sort()
 
     # --- Debugging Information (Update Section) ---
-    st.info(f"DEBUG (Update): Selected Milestone ID: {selected_milestone_id}")
-    st.info(f"DEBUG (Update): Current OID: {initial_oid}, Current Level: {initial_level}, Current Class: {initial_class}")
-    st.info(f"DEBUG (Update): GType of current Offering ({initial_oid}): {updated_offering_details_gtype}")
-    st.info(f"DEBUG (Update): Levels defined for GType: {LEVEL_MAPPING.get(updated_offering_details_gtype, [])}")
-    st.info(f"DEBUG (Update): Existing Levels for current OID (excluding current milestone's): {list(existing_levels_for_selected_oid_excluding_current)}")
-    st.info(f"DEBUG (Update): Available Levels for new Level dropdown: {available_levels_for_update}")
+    print(f"DEBUG (Update): Selected Milestone ID: {selected_milestone_id}")
+    print(f"DEBUG (Update): Current OID: {initial_oid}, Current Level: {initial_level}, Current Class: {initial_class}")
+    print(f"DEBUG (Update): GType of current Offering ({initial_oid}): {updated_offering_details_gtype}")
+    print(f"DEBUG (Update): Levels defined for GType: {LEVEL_MAPPING.get(updated_offering_details_gtype, [])}")
+    print(f"DEBUG (Update): Existing Levels for current OID (excluding current milestone's): {list(existing_levels_for_selected_oid_excluding_current)}")
+    print(f"DEBUG (Update): Available Levels for new Level dropdown: {available_levels_for_update}")
     # --- End Debugging Information ---
 
 
