@@ -10,6 +10,8 @@ import milestoneRoutes from './routes/milestoneRoutes'; // Import new milestone 
 import subjectRoutes from './routes/subjectRoutes'; // Import new subject routes
 import topicRoutes from './routes/topicRoutes';     // Import new topic routes
 import userRoutes from './routes/userRoutes'; // Import new user routes
+import teacherDirectRoutes from './routes/teacherDirectRoutes'; // NEW import
+import studentDirectRoutes from './routes/studentDirectRoutes'; // NEW import
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -37,6 +39,10 @@ app.use('/topics', topicRoutes);     // New route for topics
 // Use the User routes
 app.use('/users', userRoutes); // New route for users
 
+// --- NEW Direct Teacher and Student Routes ---
+app.use('/teachers', teacherDirectRoutes); // Direct teacher management (old way)
+app.use('/students', studentDirectRoutes); // Direct student management (old way)
+
 
 // --- Centralized Error Handling Middleware ---
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
@@ -61,6 +67,11 @@ app.listen(PORT, () => {
   console.log(`   http://localhost:${PORT}/topics`);
   console.log(`User routes will be accessible at:`);
   console.log(`   http://localhost:${PORT}/users`);
+  console.log(`Direct teacher routes will be accessible at:`);
+  console.log(`   http://localhost:${PORT}/teachers`);
+  console.log(`Direct Students routes will be accessible at:`);
+  console.log(`   http://localhost:${PORT}/students`);
+
 
 
 });

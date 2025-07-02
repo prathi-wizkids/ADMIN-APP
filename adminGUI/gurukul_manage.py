@@ -55,6 +55,11 @@ def delete_gurukul(gid):
 # --- Streamlit UI for Gurukul Management ---
 
 def gurukul_manage_page():
+    #st.set_page_config(wide="centered") # or "wide" depending on your preference
+    col1, col2, col3 = st.columns([1, 1, 1]) # Adjust column ratios if needed
+    with col1: # Place content in the first column
+        st.image("flower.png", width=50, caption="") # Adjust 'width' for tiny size
+
     """Renders the UI for managing Gurukuls."""
     st.header("Manage Gurukuls")
     st.write("Here you can create, view, update, and delete Gurukuls.")
