@@ -6,6 +6,67 @@ import { findGurukulById } from './gurukulService'; // Reusing existing gurukul 
 import { findMilestoneById } from './milestoneService'; // Reusing existing milestone validation
 import { PoolClient } from 'pg'; // For transactional consistency
 
+export const assignLessonsToStudentByLevel = async (studentId: number, studentLevel: string): Promise<{ message: string, newSlogsCount: number }> => {
+    try {
+        console.log(`Attempting to assign lessons to student ID: ${studentId} at level: ${studentLevel}`);
+
+        // 1. Get all lessons that are status=2 and match the student's level,
+        //    along with their associated journey IDs.
+        const getEligibleLessonsQuery = `
+            SELECT l.lid, l.lname, s.subid, s.level, j.jid
+            FROM teachmate.lessons l
+            JOIN teachmate.topics t ON l.tid = t.tid
+            JOIN teachmate.subjects s ON t.subid = s.subid
+            JOIN teachmate.journey j ON l.lid = j.lesson_id
+            WHERE l.status = 2 AND s.level = $1;
+        `;
+        const eligibleLessonsResult = await pool.query(getEligibleLessonsQuery, [studentLevel]);
+
+        if (eligibleLessonsResult.rowCount === 0) {
+            console.log(`No eligible lessons (status=2, level=${studentLevel}) found for student ID: ${studentId}.`);
+            return { message: `No eligible lessons found for student at level ${studentLevel}.`, newSlogsCount: 0 };
+        }
+
+        console.log(`${eligibleLessonsResult.rowCount} eligible lessons found for student ID: ${studentId}.`);
+
+        // 2. Insert slog entries for each eligible lesson's journey ID against the student ID.
+        //    Only insert if the slog entry does not already exist.
+        const insertSlogQuery = `
+            INSERT INTO studentmate.slog (sid, jid, starttime, status)
+            VALUES ($1, $2, NOW(), 'In_progress')
+        `;
+        const checkSlogExistsQuery = `
+            SELECT 1 FROM studentmate.slog WHERE sid = $1 AND jid = $2
+        `;
+        let newSlogsCreatedCount = 0;
+
+        for (const lesson of eligibleLessonsResult.rows) {
+            const { jid, lid, lname } = lesson; // Extract jid and other lesson info for logging
+
+            // Check if a slog entry already exists for this student and journey
+            const existsResult = await pool.query(checkSlogExistsQuery, [studentId, jid]);
+            
+            if (existsResult.rowCount === 0) {
+                // If it doesn't exist, insert a new slog entry
+                await pool.query(insertSlogQuery, [studentId, jid]);
+                console.log(`Created new slog for student ID: ${studentId}, journey ID: ${jid} (Lesson: ${lname}, ID: ${lid}).`);
+                newSlogsCreatedCount++;
+            } else {
+                console.log(`Slog already exists for student ID: ${studentId} and journey ID: ${jid} (Lesson: ${lname}, ID: ${lid}). Skipping insertion.`);
+            }
+        }
+
+        console.log(`Finished assigning lessons. Total new slogs created: ${newSlogsCreatedCount}.`);
+        return { message: `Successfully created ${newSlogsCreatedCount} new slogs for student ID ${studentId} at level ${studentLevel}.`, newSlogsCount: newSlogsCreatedCount };
+
+    } catch (err) {
+        console.error(`Error in assignLessonsToStudentByLevel for student ID ${studentId}, level ${studentLevel}:`, err);
+        // Re-throw the error to be handled by the calling API endpoint or error middleware
+        throw err;
+    }
+};
+
+
 /**
  * Assigns a gurukul to a student directly in studentmate.sgurukul.
  * This function clears existing assignments and sets new ones.
@@ -180,6 +241,14 @@ export const createStudentDirect = async (
     }
     if (milestoneId !== null && milestoneId !== undefined) {
         await assignMilestoneToStudentDirect(newSid, milestoneId, client);
+        // After assigning milestone, attempt to assign lessons based on the milestone's level
+        const assignedMilestone = await findMilestoneById(milestoneId);
+        if (assignedMilestone && assignedMilestone.level) {
+            console.log(`New student ${newSid} assigned milestone ${milestoneId} with level ${assignedMilestone.level}. Attempting to assign lessons.`);
+            await assignLessonsToStudentByLevel(newSid, assignedMilestone.level);
+        } else {
+            console.log(`New student ${newSid} assigned milestone ${milestoneId}, but could not retrieve level or level is missing. Skipping lesson assignment.`);
+        }
     }
 
     await client.query('COMMIT');
@@ -257,8 +326,17 @@ export const updateStudentDirect = async (
     if (gurukulId !== undefined) {
         await assignGurukulToStudentDirect(sid, gurukulId, client);
     }
-    if (milestoneId !== undefined) {
+    if (milestoneId !== null && milestoneId !== undefined) {
         await assignMilestoneToStudentDirect(sid, milestoneId, client);
+        // After assigning milestone, attempt to assign lessons based on the milestone's level
+        const assignedMilestone = await findMilestoneById(milestoneId);
+        if (assignedMilestone && assignedMilestone.level) {
+            console.log(`Student ${sid} updated with milestone ${milestoneId} (level: ${assignedMilestone.level}). Attempting to assign lessons.`);
+            await assignLessonsToStudentByLevel(sid, assignedMilestone.level);
+        } else {
+            console.log(`Student ${sid} updated with milestone ${milestoneId}, but could not retrieve level or level is missing. Skipping lesson assignment.`);
+        }
+        
     }
 
     await client.query('COMMIT');

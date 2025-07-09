@@ -5,6 +5,9 @@ import { findSubjectById } from './subjectService';
 import bcrypt from 'bcryptjs';
 import { findGurukulById } from './gurukulService';
 import { findMilestoneById } from './milestoneService';
+import { findSubjectsByLevel } from './subjectService'; 
+import { console } from 'inspector';
+
 
 // --- Helper to get role-specific ID and link from public.users.userid ---
 const getRoleSpecificIds = async (userid: number, role: string) => {
@@ -227,6 +230,46 @@ export const createNewUser = async (
   }
 };
 
+// Helper function to find journeys by subject IDs
+async function findJourneysBySubjectIds(subjectIds: number[], client: any): Promise<{ jid: number }[]> {
+    if (subjectIds.length === 0) {
+        return []; // No subject IDs to query
+    }
+    // Using ANY($1::int[]) to efficiently query for multiple subject_ids.
+    const journeysResult = await client.query(
+        'SELECT jid FROM teachmate.journey WHERE subject_id = ANY($1::int[])',
+        [subjectIds]
+    );
+    console.log("I AM SELECTING THE JOURNEYS");
+    console.table(journeysResult.rows);
+    return journeysResult.rows;
+}
+
+// Helper function to insert journeys into the slog table
+async function insertJourneysIntoSlog(studentId: number, journeyIds: number[], client: any): Promise<void> {
+    if (journeyIds.length === 0) {
+        console.log(`No journeys to insert into slog for student ${studentId}.`);
+        return;
+    }
+    console.log("insert joueny into slog: ")
+    console.log(journeyIds);
+    const insertPromises = journeyIds.map(jid =>
+        client.query(
+            'INSERT INTO studentmate.slog (sid, jid, starttime, status) VALUES ($1, $2, NOW(), $3)',
+            [studentId, jid, 'Started']
+        )
+    );
+
+    try {
+        await Promise.all(insertPromises);
+        console.log(`Successfully assigned ${journeyIds.length} new journeys to student ${studentId} with status 'Started'.`);
+    } catch (error) {
+        console.error(`Error: Failed to insert new journeys into slog for student ${studentId}. Details:`, error);
+        // Do not stop the service, but log the critical error.
+    }
+}
+
+
 /**
  * Updates an existing user in public.users, and propagates changes to role-specific tables.
  * @param userid The public.users.userid of the user to update.
@@ -243,14 +286,14 @@ export const updateExistingUser = async (
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-
+    console.log("In updateExistingUser:")
     const currentUserResult = await client.query('SELECT userid, username, email, role, user_role_link FROM public.users WHERE userid = $1 AND isdeleted = FALSE', [userid]);
     const currentUser = currentUserResult.rows[0];
     if (!currentUser) {
       await client.query('ROLLBACK');
       return '404'; // User not found in public.users
     }
-
+    console.log(currentUserResult.rows);
     const targetEmail = email !== undefined ? email : currentUser.email;
 
     // --- Critical: Check for duplicate emails across all relevant tables if email is changing ---
@@ -342,7 +385,7 @@ export const updateExistingUser = async (
         const studentFields: string[] = [];
         const studentValues: any[] = [];
         let studentParamIndex = 1;
-
+        console.log("I am a student");
         if (username !== undefined) { // Access username directly from parameter, not scope
             studentFields.push(`sname = $${studentParamIndex++}`);
             studentValues.push(username);
@@ -361,9 +404,65 @@ export const updateExistingUser = async (
         if (gurukulId !== undefined) {
             await assignGurukulToStudent(studentId, gurukulId, client);
         }
-        if (milestoneId !== undefined) {
+        if (milestoneId !== undefined && milestoneId !== null) {
             await assignMilestoneToStudent(studentId, milestoneId, client);
-        }
+            // --- Logic for updating student's journey (slog) entries based on new milestone level ---
+            console.log("milestone change. New logic starts");
+            // 1. Retrieve and log current slog entries for the student.
+            // This step allows for a record of what journeys the student was on before the update.
+            const currentSlogEntriesResult = await client.query(
+                'SELECT distinct jid FROM studentmate.slog WHERE sid = $1',
+                [studentId]
+            );
+            console.log(`Student ${studentId} was previously engaged in these journeys:`, currentSlogEntriesResult.rows);
+
+            // Delete all existing slog entries for the student.
+            // This ensures a clean slate before assigning new level-specific journeys.
+            await client.query('DELETE FROM studentmate.slog WHERE sid = $1', [studentId]);
+            console.log(`Successfully removed all prior slog entries for student ${studentId}.`);
+
+            // 2. Assign new journeys based on the student's updated level.
+            // First, fetch the student's current level directly from the milestone using milestoneService.
+            const milestone = await findMilestoneById(milestoneId);
+
+            // Handle cases where the milestone might not be found or has no level.
+            if (!milestone || milestone.level === null || milestone.level === undefined) {
+                console.warn(`Info: Milestone ${milestoneId} not found or has no level defined. Cannot assign new journeys.`);
+                return; // Not an error to stop service, just an info/warning.
+            }
+
+            const newStudentLevel = milestone.level;
+            console.log(`Student ${studentId} has a new level based on milestone ${milestoneId}: ${newStudentLevel}. Fetching new journeys.`);
+
+            // Retrieve subjects associated with the student's new level using subjectService.
+            const subjects = await findSubjectsByLevel(newStudentLevel);
+            const subjectIds = subjects.map(row => row.subject_id);
+
+            // If no subjects are found for the new level, no journeys can be assigned.
+            if (subjectIds.length === 0) {
+                console.log(`Info: No subjects found for level ${newStudentLevel}. No new journeys will be assigned.`);
+                return; // Not an error to stop service, just an info.
+            }
+            
+            // Retrieve journeys associated with the identified subjects using the new helper.
+            const journeys = await findJourneysBySubjectIds(subjectIds, client);
+            console.log("In updateExxtingUser: Got the result in findJourneysBySubjectIds ");
+            console.log(journeys);
+            const newJourneyIds = journeys.map(row => row.jid);
+
+            // If no journeys are found for the subjects, skip insertion.
+            if (newJourneyIds.length === 0) {
+                console.log(`Info: No new journeys found for the assigned subjects. No new slog entries will be created.`);
+                return; // Not an error to stop service, just an info.
+            }
+
+            console.log("sending joueneys to create slogs: ");
+            console.log(newJourneyIds);
+            // Insert the new journeys into the `studentmate.slog` table using the new helper.
+            await insertJourneysIntoSlog(studentId, newJourneyIds, client);
+
+        }//!milestoneId
+
     }
 
     await client.query('COMMIT');

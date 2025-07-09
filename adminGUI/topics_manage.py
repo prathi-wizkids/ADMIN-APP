@@ -2,6 +2,7 @@
 import streamlit as st
 import requests
 import pandas as pd
+import re # Import regex for parsing IDs from display strings
 
 # --- Configuration ---
 API_BASE_URL = "http://localhost:5002" # Your Node.js API URL
@@ -62,7 +63,8 @@ def delete_topic(tid):
 # --- API Interaction Functions for Subjects (re-used) ---
 
 def get_all_subjects_for_dropdown():
-    """Fetches all subjects (subid, subname) for use in dropdowns."""
+    """Fetches all subjects (subid, subname, level) for use in dropdowns.
+       Assumes the /subjects endpoint returns 'level' field."""
     try:
         response = requests.get(f"{API_BASE_URL}/subjects")
         response.raise_for_status()
@@ -84,6 +86,9 @@ def topics_manage_page():
 
     # Create maps for easy lookup
     subject_id_to_name_map = {s['subid']: s['subname'] for s in all_subjects}
+    # [START Change 1 - New map for full subject details]
+    subject_id_to_full_obj_map = {s['subid']: s for s in all_subjects}
+    # [END Change 1 - New map for full subject details]
     
     # Group existing topics by subject ID
     topic_subid_map = {}
@@ -102,13 +107,22 @@ def topics_manage_page():
         return # Exit function if no subjects
 
     # Select Subject for Creation
-    subject_display_options_create = [f"{s['subname']} (ID: {s['subid']})" for s in all_subjects]
+    # [START Change 1 - Enhanced Subject Display in Create Section]
+    subject_display_options_create = [
+        f"{s['subname']} (Level: {s.get('level', 'N/A')}, ID: {s['subid']})" for s in all_subjects
+    ]
+    # [END Change 1 - Enhanced Subject Display in Create Section]
     selected_subject_create_display = st.selectbox(
         "Select Parent Subject for new Topic",
         options=subject_display_options_create,
         key="create_topic_subject_select"
     )
-    selected_subject_create_id = int(selected_subject_create_display.split("(ID: ")[1][:-1]) if selected_subject_create_display else None
+    # Extract ID using regex for robustness
+    selected_subject_create_id = None
+    if selected_subject_create_display:
+        match = re.search(r"ID: (\d+)", selected_subject_create_display)
+        if match:
+            selected_subject_create_id = int(match.group(1))
 
     with st.form("create_topic_form"):
         new_tname = st.text_input("Topic Name", key="new_topic_name_input")
@@ -141,17 +155,26 @@ def topics_manage_page():
         # Enhance with Subject names for better display
         displayed_topics = []
         for t in all_topics:
-            subject_name = subject_id_to_name_map.get(t['subid'], "N/A Subject")
+            # [START Change 1 - Use full subject object for display]
+            subject_obj = subject_id_to_full_obj_map.get(t['subid'], {})
+            subject_name = subject_obj.get('subname', "N/A Subject")
+            subject_level = subject_obj.get('level', 'N/A')
+            subject_display_str = f"{subject_name} (Level: {subject_level}, ID: {t['subid']})"
+            # [END Change 1 - Use full subject object for display]
+
             displayed_topics.append({
                 "tid": t['tid'],
                 "tname": t['tname'],
                 "subid": t['subid'],
-                "subject_name": subject_name,
+                "subject_info": subject_display_str, # Changed key to reflect full info
                 "image_url": t.get('image_url', '') # Use .get for robustness
             })
         
+        # [START Change 1 - Adjust DataFrame columns]
         df_topics = pd.DataFrame(displayed_topics)
-        df_topics = df_topics[['tid', 'tname', 'subject_name', 'subid', 'image_url']]
+        df_topics = df_topics[['tid', 'tname', 'subject_info', 'image_url']] # Adjusted columns
+        df_topics.rename(columns={'subject_info': 'Parent Subject'}, inplace=True) # Rename column for better display
+        # [END Change 1 - Adjust DataFrame columns]
         st.dataframe(df_topics, use_container_width=True)
     else:
         st.info("No topics found yet.")
@@ -170,26 +193,35 @@ def topics_manage_page():
         st.markdown("---")
         return
 
-    # 1. Select Subject for Update
-    subject_display_options_update = [f"{s['subname']} (ID: {s['subid']})" for s in all_subjects]
-    selected_subject_update_display = st.selectbox(
-        "Select Parent Subject for Topic Update",
-        options=subject_display_options_update,
-        key="update_topic_subject_select"
-    )
-    selected_subject_update_id = int(selected_subject_update_display.split("(ID: ")[1][:-1]) if selected_subject_update_display else None
-
-    # Filter topics based on selected Subject
-    filtered_topics_for_update = [
-        t for t in all_topics if t['subid'] == selected_subject_update_id
+    # 1. Select Subject for Topic Filtering (for display)
+    # [START Change 1 - Enhanced Subject Display in Update Filter Section]
+    subject_display_options_filter_update = [
+        f"{s['subname']} (Level: {s.get('level', 'N/A')}, ID: {s['subid']})" for s in all_subjects
     ]
-    if not filtered_topics_for_update:
-        st.info(f"No topics found for the selected Subject '{selected_subject_update_display}'.")
+    # [END Change 1 - Enhanced Subject Display in Update Filter Section]
+    selected_subject_filter_update_display = st.selectbox(
+        "Filter Topics by Parent Subject (for selection below)",
+        options=subject_display_options_filter_update,
+        key="update_topic_subject_filter_select"
+    )
+    selected_subject_filter_update_id = None
+    if selected_subject_filter_update_display:
+        match = re.search(r"ID: (\d+)", selected_subject_filter_update_display)
+        if match:
+            selected_subject_filter_update_id = int(match.group(1))
+
+    # Filter topics based on selected Subject for the topic selection dropdown
+    filtered_topics_for_update_selection = [
+        t for t in all_topics if t['subid'] == selected_subject_filter_update_id
+    ]
+    
+    if not filtered_topics_for_update_selection:
+        st.info(f"No topics found for the selected Subject '{selected_subject_filter_update_display}'.")
         st.markdown("---")
         return
 
     # 2. Select Topic to Update (filtered by Subject)
-    sorted_topics_for_update = sorted(filtered_topics_for_update, key=lambda x: x['tid'])
+    sorted_topics_for_update = sorted(filtered_topics_for_update_selection, key=lambda x: x['tid'])
     topic_options_update = {
         f"ID: {t['tid']} ({t['tname']})": t['tid'] 
         for t in sorted_topics_for_update
@@ -211,8 +243,32 @@ def topics_manage_page():
             initial_subid = current_topic_obj['subid'] # This is the current topic's actual subject ID
             initial_image_url = current_topic_obj.get('image_url', '')
 
-            # Display the current subject (non-editable for this form, as hierarchy is selected above)
-            st.info(f"Current Parent Subject: {subject_id_to_name_map.get(initial_subid, 'N/A')}")
+            # [START Change 2 - Display Current Parent Subject and allow changing it]
+            current_subject_obj = subject_id_to_full_obj_map.get(initial_subid, {})
+            current_subject_display_info = f"{current_subject_obj.get('subname', 'N/A')} (Level: {current_subject_obj.get('level', 'N/A')}, ID: {initial_subid})"
+            st.info(f"Current Parent Subject: **{current_subject_display_info}**")
+
+            # Options for changing parent subject: "Keep Current" + all other subjects
+            change_subject_options = ["-- Keep Current Subject --"]
+            other_subjects = [s for s in all_subjects if s['subid'] != initial_subid]
+            # [START Change 1 - Enhanced Subject Display in New Selectbox]
+            change_subject_options.extend([
+                f"{s['subname']} (Level: {s.get('level', 'N/A')}, ID: {s['subid']})" for s in other_subjects
+            ])
+            # [END Change 1 - Enhanced Subject Display in New Selectbox]
+            
+            selected_new_subject_display = st.selectbox(
+                "Change Parent Subject (Optional)",
+                options=change_subject_options,
+                key="change_topic_parent_subject_select"
+            )
+
+            new_subid_for_update = initial_subid # Default to current subject ID
+            if selected_new_subject_display != "-- Keep Current Subject --":
+                match = re.search(r"ID: (\d+)", selected_new_subject_display)
+                if match:
+                    new_subid_for_update = int(match.group(1))
+            # [END Change 2 - Display Current Parent Subject and allow changing it]
             
             updated_tname = st.text_input("New Topic Name", value=initial_tname, key="updated_topic_name_input")
             updated_image_url = st.text_input("New Image URL (optional)", value=initial_image_url, key="updated_topic_image_url_input")
@@ -220,30 +276,39 @@ def topics_manage_page():
             update_submitted = st.form_submit_button("Update Topic")
 
             if update_submitted:
-                if selected_topic_id is not None and updated_tname and initial_subid is not None:
-                    # Check for duplicate topic name with other topics within the *current* subject
-                    existing_topics_in_current_subject = {
+                if selected_topic_id is not None and updated_tname and new_subid_for_update is not None:
+                    # Check for duplicate topic name within the *new* selected subject
+                    # If subject is changed, check against topics in the new subject
+                    # If subject is not changed, check against topics in the current subject (excluding itself)
+                    target_subid_for_duplicate_check = new_subid_for_update
+                    
+                    existing_topics_in_target_subject = {
                         t['tname'] for t in all_topics 
-                        if t['subid'] == initial_subid and t['tid'] != selected_topic_id
+                        if t['subid'] == target_subid_for_duplicate_check and t['tid'] != selected_topic_id
                     }
-                    if updated_tname in existing_topics_in_current_subject:
-                        st.warning(f"Topic '{updated_tname}' already exists for this subject. Please choose a different name.")
+
+                    # If the topic name is changed OR the subject is changed, perform duplicate check
+                    if (updated_tname != initial_tname or new_subid_for_update != initial_subid) and \
+                       (updated_tname in existing_topics_in_target_subject):
+                        st.warning(f"Topic '{updated_tname}' already exists in the selected subject. Please choose a different name or subject.")
                     else:
                         with st.spinner(f"Updating topic ID {selected_topic_id}..."):
                             update_payload = {}
                             if updated_tname != initial_tname:
                                 update_payload['tname'] = updated_tname
-                            # subid is passed as it's part of the uniqueness constraint, even if it logically doesn't change here
-                            # in this hierarchical update flow. Backend validation will ensure it's still valid.
-                            # We explicitly include it to ensure the API call for update is complete.
-                            update_payload['subid'] = initial_subid 
+                            
+                            # [START Change 2 - Add new_subid_for_update to payload if changed]
+                            if new_subid_for_update != initial_subid:
+                                update_payload['subid'] = new_subid_for_update
+                            # [END Change 2 - Add new_subid_for_update to payload if changed]
+                            
                             if updated_image_url != initial_image_url:
                                 update_payload['image_url'] = updated_image_url
                             
                             # --- Debugging Information (Update Section) ---
                             st.info(f"DEBUG (Update): Selected Topic ID: {selected_topic_id}")
                             st.info(f"DEBUG (Update): Initial Data: Name='{initial_tname}', Subject ID='{initial_subid}', Image='{initial_image_url}'")
-                            st.info(f"DEBUG (Update): Updated Data: Name='{updated_tname}', Subject ID='{initial_subid}', Image='{updated_image_url}'")
+                            st.info(f"DEBUG (Update): Updated Data: Name='{updated_tname}', New Subject ID='{new_subid_for_update}', Image='{updated_image_url}'")
                             st.info(f"DEBUG (Update): Payload to send: {update_payload}")
                             # --- End Debugging Information ---
 
@@ -252,6 +317,13 @@ def topics_manage_page():
                                 st.rerun()
                                 return
 
+                            # Pass subid explicitly from new_subid_for_update, if it was changed or not
+                            # This ensures it's always included in the payload for validation and consistency
+                            # The update_topic function takes subid as an optional parameter,
+                            # so explicitly setting it here ensures it's part of the API request.
+                            if 'subid' not in update_payload: # Ensure subid is always in payload if not explicitly changed
+                                update_payload['subid'] = initial_subid
+                                
                             result = update_topic(selected_topic_id, **update_payload)
                             if result:
                                 st.success(f"Topic ID {result['tid']} updated successfully!")
@@ -295,4 +367,3 @@ def topics_manage_page():
                         st.error("Failed to delete topic. Please check API logs.")
     else:
         st.info("No topics available to delete.")
-

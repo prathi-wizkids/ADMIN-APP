@@ -13,7 +13,7 @@ export const findAllGurukuls = async (): Promise<any[]> => {
   try {
     const result = await pool.query('SELECT gid, gname FROM public.gurukul ORDER BY gid ASC');
     console.log("In findAllGurukuls");
-    console.table(result.rows);
+    //console.table(result.rows);
     return result.rows;
   } catch (error) {
     console.error('Error in findAllGurukuls:', error);

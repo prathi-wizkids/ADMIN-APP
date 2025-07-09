@@ -231,7 +231,7 @@ export const findTeacherDirectById = async (teachid: number): Promise<any | unde
 export const findAllTeachersDirect = async (): Promise<any[]> => {
   try {
     const result = await pool.query(
-      `SELECT teachid, name, email, last_login, created_at FROM teachmate.teachers ORDER BY name ASC`
+      `SELECT teachid, name, email, last_login, created_at FROM teachmate.teachers ORDER BY teachid ASC`
     );
     const teachers = result.rows;
 

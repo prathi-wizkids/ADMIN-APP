@@ -128,7 +128,7 @@ export const createUser: RequestHandler = async (req, res) => {
 export const updateUser: RequestHandler = async (req, res) => {
   const userid = parseInt(req.params.id);
   const { username, email, role, subject_ids, gurukul_id, milestone_id } = req.body;
-
+  console.log("In update User controller");
   if (isNaN(userid)) {
     res.status(400).json({ message: 'Invalid User ID' });
     return;

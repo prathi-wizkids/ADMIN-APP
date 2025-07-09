@@ -1,8 +1,9 @@
-# DirectTeacher_manage.py - StreamlitAPIException Fix
+# DirectTeacher_manage.py - StreamlitAPIException Fix with Consistent Subject Levels
 
 import streamlit as st
 import requests
 import json
+import re # Import regex for parsing IDs from display strings
 
 API_BASE_URL = "http://localhost:5002"
 
@@ -54,8 +55,12 @@ def fetch_all_teachers_direct():
 
 @st.cache_data(ttl=60)
 def fetch_all_subjects():
+    """Fetches all subjects, including their level, for use in dropdowns."""
     status, data = direct_api_call('GET', '/subjects')
     if status == 200:
+        # Ensure 'level' is present, default to 'N/A' if not
+        for s in data:
+            s['level'] = s.get('level', 'N/A')
         return data
     st.error(f"Failed to fetch subjects: {data.get('message', 'Unknown error')}")
     return []
@@ -63,7 +68,6 @@ def fetch_all_subjects():
 # --- Session State Initialization for Direct Teacher Management ---
 def initialize_direct_teacher_crud_states():
     # Only initialize if not already set, to preserve values across reruns
-    # These are used as default values for the widgets
     if 'add_teacher_name_input' not in st.session_state:
         st.session_state.add_teacher_name_input = ""
     if 'add_teacher_email_input' not in st.session_state:
@@ -72,11 +76,11 @@ def initialize_direct_teacher_crud_states():
         st.session_state.add_teacher_subjects_multiselect = [] # Default to empty list for multiselect
 
     # For update form (these will be dynamically set when a teacher is selected)
-    if 'update_teacher_name_input_val' not in st.session_state: # Use distinct key for update form's value
+    if 'update_teacher_name_input_val' not in st.session_state:
         st.session_state.update_teacher_name_input_val = ""
-    if 'update_teacher_email_input_val' not in st.session_state: # Use distinct key for update form's value
+    if 'update_teacher_email_input_val' not in st.session_state:
         st.session_state.update_teacher_email_input_val = ""
-    if 'update_teacher_subjects_multiselect_val' not in st.session_state: # Use distinct key for update form's value
+    if 'update_teacher_subjects_multiselect_val' not in st.session_state:
         st.session_state.update_teacher_subjects_multiselect_val = []
 
 
@@ -84,27 +88,37 @@ def show_teacher_crud_direct():
     st.header("Manage Teachers (Direct)")
     st.info("This section allows you to manage teacher users directly via the /teachers endpoint.")
 
-    # Initialize states at the very beginning of the function
     initialize_direct_teacher_crud_states()
 
     st.subheader("Add New Teacher")
     all_subjects = fetch_all_subjects()
-    subject_options = {s['subname']: s['subid'] for s in all_subjects}
-    subject_names = list(subject_options.keys())
+    
+    # Create a map from display string to full subject object for easy lookup
+    # and a map from subid to full subject object
+    subject_display_to_obj_map = {
+        f"{s['subname']} (Level: {s['level']}, ID: {s['subid']})": s 
+        for s in all_subjects
+    }
+    subject_id_to_obj_map = {s['subid']: s for s in all_subjects}
+
+    # Options for multiselect, sorted by subject name
+    subject_display_options = sorted(list(subject_display_to_obj_map.keys()))
 
     with st.form("add_teacher_direct_form", clear_on_submit=True):
-        # Use a distinct key for the text input if you need to manually reset it
-        # However, with clear_on_submit=True, the form itself handles the reset
-        new_teacher_name = st.text_input("Teacher Name", key="add_teacher_name_input_add_form") # Changed key
-        new_teacher_email = st.text_input("Teacher Email", key="add_teacher_email_input_add_form") # Changed key
+        new_teacher_name = st.text_input("Teacher Name", key="add_teacher_name_input_add_form")
+        new_teacher_email = st.text_input("Teacher Email", key="add_teacher_email_input_add_form")
         
-        selected_subject_names = st.multiselect(
+        selected_subject_display_names = st.multiselect(
             "Assign Subjects (Optional)",
-            subject_names,
-            default=[], # Default for new form is empty, clear_on_submit handles it
-            key="add_teacher_subjects_multiselect_add_form" # Changed key
+            subject_display_options, # This uses the "Name (Level: X, ID: Y)" format
+            default=[],
+            key="add_teacher_subjects_multiselect_add_form"
         )
-        subject_ids_to_assign = [subject_options[name] for name in selected_subject_names]
+        # Convert display names back to subject IDs
+        subject_ids_to_assign = [
+            subject_display_to_obj_map[display_name]['subid'] 
+            for display_name in selected_subject_display_names
+        ]
 
         submit_add_teacher = st.form_submit_button("Add Teacher")
 
@@ -120,10 +134,8 @@ def show_teacher_crud_direct():
                 status, data = direct_api_call('POST', '/teachers', payload)
                 if status == 201:
                     st.success(f"Teacher '{new_teacher_name}' added successfully!")
-                    st.cache_data.clear() # Clear cache for all data
-                    # No need to manually reset st.session_state for add form inputs here
-                    # as clear_on_submit=True handles the form's widgets, and rerun refreshes.
-                    st.rerun() # Force a rerun to clear the form and refresh data
+                    st.cache_data.clear()
+                    st.rerun()
                 elif status == 409:
                     st.warning(f"Failed to add teacher: Teacher with email '{new_teacher_email}' already exists.")
                 else:
@@ -136,9 +148,23 @@ def show_teacher_crud_direct():
     else:
         teachers_display_data = []
         for teacher in teachers:
-            assigned_subjects_formatted = ", ".join([s['subname'] for s in teacher.get('assigned_subjects', [])])
+            assigned_subjects_formatted_list = []
+            for assigned_subject in teacher.get('assigned_subjects', []):
+                # Use the subject_id_to_obj_map to get full details including level and ID
+                full_subject_obj = subject_id_to_obj_map.get(assigned_subject['subid'])
+                if full_subject_obj:
+                    # Corrected to include ID
+                    assigned_subjects_formatted_list.append(
+                        f"{full_subject_obj['subname']} (Level: {full_subject_obj['level']}, ID: {full_subject_obj['subid']})"
+                    )
+                else:
+                    # Fallback if full details not found (shouldn't happen if API is consistent)
+                    assigned_subjects_formatted_list.append(assigned_subject['subname']) 
+            
+            assigned_subjects_formatted = ", ".join(assigned_subjects_formatted_list)
             if not assigned_subjects_formatted:
                 assigned_subjects_formatted = "N/A"
+
             teachers_display_data.append({
                 'TeachID': teacher['teachid'],
                 'Name': teacher['name'],
@@ -160,23 +186,34 @@ def show_teacher_crud_direct():
                 # Set session state values for the update form based on selected teacher
                 st.session_state.update_teacher_name_input_val = current_teacher_data['name']
                 st.session_state.update_teacher_email_input_val = current_teacher_data['email']
-                current_assigned_subject_ids = [s['subid'] for s in current_teacher_data.get('assigned_subjects', [])]
-                st.session_state.update_teacher_subjects_multiselect_val = [name for name, id in subject_options.items() if id in current_assigned_subject_ids]
+                
+                # Convert current assigned subject IDs to their full display strings (Name (Level: X, ID: Y))
+                current_assigned_subject_display_names = []
+                for assigned_sub in current_teacher_data.get('assigned_subjects', []):
+                    full_sub_obj = subject_id_to_obj_map.get(assigned_sub['subid'])
+                    if full_sub_obj:
+                        current_assigned_subject_display_names.append(
+                            f"{full_sub_obj['subname']} (Level: {full_sub_obj['level']}, ID: {full_sub_obj['subid']})"
+                        )
+                st.session_state.update_teacher_subjects_multiselect_val = current_assigned_subject_display_names
 
                 st.markdown("---")
                 st.subheader(f"Update Teacher: {selected_teacher_display}")
                 with st.form(f"update_teacher_direct_form_{st.session_state.selected_teacher_id}", clear_on_submit=True):
-                    # Use session state as value for update form inputs
                     updated_name = st.text_input("New Teacher Name", value=st.session_state.update_teacher_name_input_val, key=f"update_teacher_name_{st.session_state.selected_teacher_id}")
                     updated_email = st.text_input("New Teacher Email", value=st.session_state.update_teacher_email_input_val, key=f"update_teacher_email_{st.session_state.selected_teacher_id}")
                     
-                    updated_selected_subject_names = st.multiselect(
+                    updated_selected_subject_display_names = st.multiselect(
                         "Update Assigned Subjects (Optional)",
-                        subject_names,
+                        subject_display_options, # Use the enhanced display options
                         default=st.session_state.update_teacher_subjects_multiselect_val,
                         key=f"update_teacher_subjects_multiselect_{st.session_state.selected_teacher_id}"
                     )
-                    updated_subject_ids = [subject_options[name] for name in updated_selected_subject_names]
+                    # Convert selected display names back to subject IDs
+                    updated_subject_ids = [
+                        subject_display_to_obj_map[display_name]['subid'] 
+                        for display_name in updated_selected_subject_display_names
+                    ]
 
                     submit_update_teacher = st.form_submit_button("Update Teacher")
                     if submit_update_teacher:
@@ -192,7 +229,6 @@ def show_teacher_crud_direct():
                             if status == 200:
                                 st.success(f"Teacher '{updated_name}' updated successfully!")
                                 st.cache_data.clear()
-                                # No need to manually reset session state here, rerun will re-evaluate
                                 st.rerun()
                             elif status == 409:
                                 st.warning(f"Failed to update teacher: Teacher with email '{updated_email}' already exists.")
